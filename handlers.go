@@ -357,6 +357,56 @@ func (s *server) SetWebhook() http.HandlerFunc {
 	}
 }
 
+func (s *server) GetPairCode() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		userid, _ := strconv.Atoi(txtid)
+		paircode := ""
+
+		if clientPointer[userid] == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			return
+		} else {
+			if clientPointer[userid].IsConnected() == false {
+				s.Respond(w, r, http.StatusInternalServerError, errors.New("Not connected"))
+				return
+			}
+			rows, err := s.db.Query("SELECT paircode AS code FROM users WHERE id=? LIMIT 1", userid)
+			if err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				err = rows.Scan(&paircode)
+				if err != nil {
+					s.Respond(w, r, http.StatusInternalServerError, err)
+					return
+				}
+			}
+			err = rows.Err()
+			if err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			if clientPointer[userid].IsLoggedIn() == true {
+				s.Respond(w, r, http.StatusInternalServerError, errors.New("Already Loggedin"))
+				return
+			}
+		}
+
+		log.Info().Str("userid", txtid).Str("paircode", paircode).Msg("Get PairCode successful")
+		response := map[string]interface{}{"PairCode": fmt.Sprintf("%s", paircode)}
+		responseJson, err := json.Marshal(response)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+	}
+}
+
 // Gets QR code encoded in Base64
 func (s *server) GetQR() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -364,7 +414,7 @@ func (s *server) GetQR() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		code := ""
-
+		
 		if clientPointer[userid] == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
 			return
