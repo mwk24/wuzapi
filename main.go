@@ -83,11 +83,11 @@ func main() {
 		panic(fmt.Sprintf("%q: %s\n", err, sqlStmt))
 	}
 
-	if(*waDebug!="") {
+	if *waDebug != "" {
 		dbLog := waLog.Stdout("Database", *waDebug, true)
-		container, err = sqlstore.New("sqlite", "file:"+exPath+"/dbdata/main.db?_foreign_keys=on&_busy_timeout=3000", dbLog)
+		container, err = sqlstore.New("sqlite", "file:"+exPath+"/dbdata/main.db?_foreign_keys=on&_busy_timeout=3000&_pragma=foreign_keys(1)", dbLog)
 	} else {
-		container, err = sqlstore.New("sqlite", "file:"+exPath+"/dbdata/main.db?_foreign_keys=on&_busy_timeout=3000", nil)
+		container, err = sqlstore.New("sqlite", "file:"+exPath+"/dbdata/main.db?_foreign_keys=on&_busy_timeout=3000&_pragma=foreign_keys(1)", nil)
 	}
 	if err != nil {
 		panic(err)
