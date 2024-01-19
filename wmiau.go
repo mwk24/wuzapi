@@ -234,23 +234,18 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 		// Get ready to receive QR code
 		qrChan, err := client.GetQRChannel(context.Background())
 
-		err = client.Connect() // Si no conectamos no se puede generar QR
-		if err != nil {
-			panic(err)
-		}
-
-		// Generate pair code
-		pairCode, err := client.PairPhone("+16506446966", true, whatsmeow.PairClientChrome, "Chrome (iOS)")
-		if err != nil {
-			log.Error().Err(err).Msg("Failed generate pair code")
-		} else {
-			log.Info().Str("pairCode", pairCode).Msg("Pair code generated")
-			sqlStmt := `UPDATE users SET paircode=? WHERE id=?`
-			_, err := s.db.Exec(sqlStmt, pairCode, userID)
-			if err != nil {
-				log.Error().Err(err).Msg(sqlStmt)
-			}
-		}
+		// // Generate pair code
+		// pairCode, err := client.PairPhone("+16506446966", true, whatsmeow.PairClientChrome, "Chrome (iOS)")
+		// if err != nil {
+		// 	log.Error().Err(err).Msg("Failed generate pair code")
+		// } else {
+		// 	log.Info().Str("pairCode", pairCode).Msg("Pair code generated")
+		// 	sqlStmt := `UPDATE users SET paircode=? WHERE id=?`
+		// 	_, err := s.db.Exec(sqlStmt, pairCode, userID)
+		// 	if err != nil {
+		// 		log.Error().Err(err).Msg(sqlStmt)
+		// 	}
+		// }
 
 		if err != nil {
 			// This error means that we're already logged in, so ignore it.
@@ -258,6 +253,11 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 				log.Error().Err(err).Msg("Failed to get QR channel")
 			}
 		} else {
+			err = client.Connect() // Si no conectamos no se puede generar QR
+			if err != nil {
+				panic(err)
+			}
+
 			for evt := range qrChan {
 				if evt.Event == "code" {
 					// Display QR code in terminal (useful for testing/developing)
