@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	firebase "firebase.google.com/go"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
@@ -34,34 +35,36 @@ var (
 	logType    = flag.String("logtype", "console", "Type of log output (console or json)")
 	sslcert    = flag.String("sslcertificate", "", "SSL Certificate File")
 	sslprivkey = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
-    container *sqlstore.Container
+	container  *sqlstore.Container
 
 	killchannel   = make(map[int](chan bool))
 	userinfocache = cache.New(5*time.Minute, 10*time.Minute)
-	log zerolog.Logger
+	log           zerolog.Logger
+
+	firebaseapp *firebase.App
 )
 
 func init() {
 
 	flag.Parse()
 
-	if(*logType=="json") {
-        log = zerolog.New(os.Stdout).With().Timestamp().Str("role",filepath.Base(os.Args[0])).Logger()
-    } else {
-        output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-        log = zerolog.New(output).With().Timestamp().Str("role",filepath.Base(os.Args[0])).Logger()
-    }
+	if *logType == "json" {
+		log = zerolog.New(os.Stdout).With().Timestamp().Str("role", filepath.Base(os.Args[0])).Logger()
+	} else {
+		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		log = zerolog.New(output).With().Timestamp().Str("role", filepath.Base(os.Args[0])).Logger()
+	}
 }
 
 func main() {
 
-    ex, err := os.Executable()
-    if err != nil {
-        panic(err)
-    }
-    exPath := filepath.Dir(ex)
+	ex, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	exPath := filepath.Dir(ex)
 
-    dbDirectory := exPath + "/dbdata"
+	dbDirectory := exPath + "/dbdata"
 	_, err = os.Stat(dbDirectory)
 	if os.IsNotExist(err) {
 		errDir := os.MkdirAll(dbDirectory, 0751)
@@ -70,9 +73,9 @@ func main() {
 		}
 	}
 
-	db, err := sql.Open("sqlite", exPath + "/dbdata/users.db")
+	db, err := sql.Open("sqlite", exPath+"/dbdata/users.db")
 	if err != nil {
-		log.Fatal().Err(err).Msg("Could not open/create "+exPath+"/dbdata/users.db")
+		log.Fatal().Err(err).Msg("Could not open/create " + exPath + "/dbdata/users.db")
 		os.Exit(1)
 	}
 	defer db.Close()
@@ -107,6 +110,12 @@ func main() {
 		Handler: s.router,
 	}
 
+	// Firebase setup
+	firebaseapp, err = firebase.NewApp(context.Background(), nil)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Firebase initialization error")
+	}
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
@@ -114,17 +123,17 @@ func main() {
 		if *sslcert != "" {
 			if err := srv.ListenAndServeTLS(*sslcert, *sslprivkey); err != nil && err != http.ErrServerClosed {
 				//log.Fatalf("listen: %s\n", err)
-                log.Fatal().Err(err).Msg("Startup failed")
+				log.Fatal().Err(err).Msg("Startup failed")
 			}
 		} else {
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				//log.Fatalf("listen: %s\n", err)
-                log.Fatal().Err(err).Msg("Startup failed")
+				log.Fatal().Err(err).Msg("Startup failed")
 			}
 		}
 	}()
-    //wlog.Infof("Server Started. Listening on %s:%s", *address, *port)
-    log.Info().Str("address", *address).Str("port",*port).Msg("Server Started")
+	//wlog.Infof("Server Started. Listening on %s:%s", *address, *port)
+	log.Info().Str("address", *address).Str("port", *port).Msg("Server Started")
 
 	<-done
 	log.Info().Msg("Server Stoped")
@@ -136,7 +145,7 @@ func main() {
 	}()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Error().Str("error",fmt.Sprintf("%+v",err)).Msg("Server Shutdown Failed")
+		log.Error().Str("error", fmt.Sprintf("%+v", err)).Msg("Server Shutdown Failed")
 		os.Exit(1)
 	}
 	log.Info().Msg("Server Exited Properly")

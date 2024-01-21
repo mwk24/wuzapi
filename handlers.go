@@ -103,6 +103,17 @@ func (s *server) auth(handler http.HandlerFunc) http.HandlerFunc {
 			token = strings.Join(r.URL.Query()["token"], "")
 		}
 
+		if token == "" {
+			s.Respond(w, r, http.StatusUnauthorized, errors.New("No token provided"))
+			return
+		}
+
+		// firebasetoken, err := firebaseclient.VerifyIDToken(ctx, token)
+		// if err != nil {
+		// 	log.Info().Msg("Invalid firebase token")
+		// }
+		// log.Printf("Verified firebase token: %v\n", firebasetoken)
+
 		myuserinfo, found := userinfocache.Get(token)
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
@@ -113,24 +124,44 @@ func (s *server) auth(handler http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 			defer rows.Close()
+
 			for rows.Next() {
 				err = rows.Scan(&txtid, &webhook, &jid, &events)
 				if err != nil {
 					s.Respond(w, r, http.StatusInternalServerError, err)
 					return
 				}
-				userid, _ = strconv.Atoi(txtid)
-				v := Values{map[string]string{
-					"Id":      txtid,
-					"Jid":     jid,
-					"Webhook": webhook,
-					"Token":   token,
-					"Events":  events,
-				}}
-
-				userinfocache.Set(token, v, cache.NoExpiration)
-				ctx = context.WithValue(r.Context(), "userinfo", v)
 			}
+
+			// If user not found in DB, create new user
+			if txtid == "" {
+				log.Info().Msg("User not found in DB, creating new user")
+				// Create new user
+				result, err := s.db.Exec("INSERT INTO users (token) VALUES (?)", token)
+				if err != nil {
+					s.Respond(w, r, http.StatusInternalServerError, err)
+					return
+				}
+				insertId, err := result.LastInsertId()
+				if err != nil {
+					s.Respond(w, r, http.StatusInternalServerError, err)
+					return
+				}
+				txtid = strconv.Itoa(int(insertId))
+			}
+
+			userid, _ = strconv.Atoi(txtid)
+			v := Values{map[string]string{
+				"Id":      txtid,
+				"Jid":     jid,
+				"Webhook": webhook,
+				"Token":   token,
+				"Events":  events,
+			}}
+
+			userinfocache.Set(token, v, cache.NoExpiration)
+			ctx = context.WithValue(r.Context(), "userinfo", v)
+
 		} else {
 			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
 			userid, _ = strconv.Atoi(myuserinfo.(Values).Get("Id"))
@@ -395,8 +426,19 @@ func (s *server) GetPairCode() http.HandlerFunc {
 			return
 		}
 
+		// Firebase token
+		firebaseclient, err := firebaseapp.Auth(context.Background())
+		if err != nil {
+			log.Fatal().Msg("error getting firebase Auth client")
+		}
+
+		firebasetoken, err := firebaseclient.CustomToken(context.Background(), phonenumber)
+		if err != nil {
+			log.Info().Msg("error minting facebook custom token")
+		}
+
 		log.Info().Str("userid", txtid).Str("paircode", code).Msg("Get PairCode successful")
-		response := map[string]interface{}{"PairCode": code}
+		response := map[string]interface{}{"PairCode": code, "fbToken": firebasetoken}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
